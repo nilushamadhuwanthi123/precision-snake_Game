@@ -16,4 +16,4 @@ Built as a portfolio piece to demonstrate frontend fundamentals: clean game-loop
 Just open `index.html` in a browser — no build step, no install.
 
 ## Live version
-Published as a Claude Artifact: https://claude.ai/code/artifact/5282889e-0bda-4014-8c3a-3a943f1bd9d6
+Play it here: https://nilushamadhuwanthi123.github.io/precision-snake_Game/

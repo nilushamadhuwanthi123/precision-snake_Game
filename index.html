@@ -1,0 +1,599 @@
+<title>Precision Snake</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700;9..144,900&family=JetBrains+Mono:wght@400;500;600;700&display=swap">
+<style>
+  /*
+    Precision Snake is deliberately single-theme: an instrument-panel /
+    schematic HUD reads as a dark surface by nature (a lit display in a
+    dark bezel), so the palette is committed rather than adapted per
+    viewer theme. Every color is still declared explicitly so the page
+    holds correctly on either host ground.
+  */
+  :root {
+    --bg: #14181d;
+    --surface: #1b2027;
+    --surface-2: #20262e;
+    --grid-line: #262c35;
+    --grid-line-strong: #313a45;
+    --ink: #e9e6df;
+    --muted: #8b93a0;
+    --muted-2: #5b6472;
+    --accent: #d9823f;
+    --accent-hover: #e6934f;
+    --accent-soft: rgba(217, 130, 63, 0.18);
+    --accent-2: #5fb3a0;
+    --danger: #d9534f;
+    --danger-soft: rgba(217, 83, 79, 0.16);
+    --font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
+    --font-mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-mono);
+  }
+
+  button { font: inherit; }
+
+  .stage {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1.5rem;
+    padding: 2.5rem 1.25rem;
+    max-width: 640px;
+    margin: 0 auto;
+  }
+
+  .hud {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    width: min(480px, 100%);
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .wordmark {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-weight: 600;
+    font-size: clamp(1.3rem, 4vw, 1.6rem);
+    color: var(--ink);
+    text-wrap: balance;
+  }
+  .wordmark span { color: var(--accent); }
+
+  .stats {
+    display: flex;
+    gap: 1.5rem;
+  }
+  .stat {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+  }
+  .stat-label {
+    font-size: 0.62rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted-2);
+  }
+  .stat-value {
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+    font-size: 1.3rem;
+    color: var(--ink);
+    line-height: 1.3;
+  }
+
+  .board-frame {
+    position: relative;
+    width: min(480px, 100%);
+    aspect-ratio: 1 / 1;
+    background: var(--surface);
+    border: 1px solid var(--grid-line-strong);
+    border-radius: 4px;
+    padding: 14px;
+  }
+
+  .bracket {
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--muted-2);
+    opacity: 0.75;
+    pointer-events: none;
+  }
+  .bracket.tl { top: -1px; left: -1px; border-right: none; border-bottom: none; }
+  .bracket.tr { top: -1px; right: -1px; border-left: none; border-bottom: none; }
+  .bracket.bl { bottom: -1px; left: -1px; border-right: none; border-top: none; }
+  .bracket.br { bottom: -1px; right: -1px; border-left: none; border-top: none; }
+
+  canvas#board {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: 2px;
+    touch-action: none;
+  }
+
+  @keyframes pulseFrame {
+    0% { box-shadow: 0 0 0 0 var(--accent-soft); }
+    60% { box-shadow: 0 0 0 14px transparent; }
+    100% { box-shadow: 0 0 0 0 transparent; }
+  }
+  .board-frame.pulse { animation: pulseFrame 0.5s ease-out; }
+
+  @keyframes flashFrame {
+    0% { box-shadow: 0 0 0 0 var(--danger-soft); }
+    50% { box-shadow: 0 0 44px 6px var(--danger-soft); }
+    100% { box-shadow: 0 0 0 0 transparent; }
+  }
+  .board-frame.flash { animation: flashFrame 0.6s ease-out; }
+
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(20, 24, 29, 0.84);
+    backdrop-filter: blur(3px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+    padding: 1.5rem;
+    border-radius: 3px;
+  }
+  .overlay.visible { opacity: 1; pointer-events: auto; }
+
+  .overlay-panel { text-align: center; max-width: 320px; }
+  .overlay-eyebrow {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    color: var(--accent);
+    margin: 0 0 0.6rem;
+  }
+  .overlay-title {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-weight: 600;
+    font-size: clamp(1.6rem, 5vw, 2.1rem);
+    margin: 0 0 0.75rem;
+    color: var(--ink);
+    text-wrap: balance;
+  }
+  .overlay-copy {
+    font-size: 0.85rem;
+    line-height: 1.55;
+    color: var(--muted);
+    margin: 0 0 1.4rem;
+  }
+
+  .btn {
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    font-size: 0.78rem;
+    padding: 0.75rem 1.6rem;
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: transform 0.15s ease, background 0.15s ease;
+  }
+  .btn:hover { background: var(--accent-hover); transform: translateY(-1px); }
+  .btn:active { transform: translateY(0); }
+  .btn:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 3px; }
+
+  .hint-bar {
+    display: flex;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+    justify-content: center;
+    font-size: 0.72rem;
+    color: var(--muted-2);
+  }
+  kbd {
+    background: var(--surface-2);
+    border: 1px solid var(--grid-line-strong);
+    border-radius: 3px;
+    padding: 0.1em 0.45em;
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    color: var(--muted);
+  }
+
+  .spec-plate {
+    font-size: 0.64rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted-2);
+    text-align: center;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .board-frame.pulse, .board-frame.flash { animation: none !important; }
+    .overlay, .btn { transition: none !important; }
+  }
+
+  @media (max-width: 420px) {
+    .stats { gap: 1rem; }
+    .stat-value { font-size: 1.1rem; }
+  }
+</style>
+
+<div class="stage">
+  <header class="hud">
+    <div class="wordmark">Precision<span>Snake</span></div>
+    <div class="stats">
+      <div class="stat"><span class="stat-label">Score</span><span class="stat-value" id="score">000</span></div>
+      <div class="stat"><span class="stat-label">Best</span><span class="stat-value" id="best">000</span></div>
+      <div class="stat"><span class="stat-label">Length</span><span class="stat-value" id="length">03</span></div>
+    </div>
+  </header>
+
+  <div class="board-frame" id="frame">
+    <span class="bracket tl"></span><span class="bracket tr"></span><span class="bracket bl"></span><span class="bracket br"></span>
+    <canvas id="board" aria-label="Snake game board"></canvas>
+    <div class="overlay visible" id="overlay">
+      <div class="overlay-panel" id="overlayPanel">
+        <p class="overlay-eyebrow">Ready</p>
+        <h1 class="overlay-title">Precision Snake</h1>
+        <p class="overlay-copy">Arrow keys or WASD to steer, swipe on touch. Collect the nodes without crossing your own path.</p>
+        <button class="btn" id="startBtn" type="button">Start run</button>
+      </div>
+    </div>
+  </div>
+
+  <footer class="hint-bar">
+    <span class="hint"><kbd>&uarr;</kbd><kbd>&darr;</kbd><kbd>&larr;</kbd><kbd>&rarr;</kbd> or <kbd>WASD</kbd> to move</span>
+    <span class="hint"><kbd>Space</kbd> to pause</span>
+  </footer>
+
+  <p class="spec-plate">Vanilla JS &middot; Canvas &middot; No dependencies</p>
+</div>
+
+<script>
+(function () {
+  var GRID = 24;
+  var canvas = document.getElementById('board');
+  var ctx = canvas.getContext('2d');
+  var scoreEl = document.getElementById('score');
+  var bestEl = document.getElementById('best');
+  var lengthEl = document.getElementById('length');
+  var overlay = document.getElementById('overlay');
+  var overlayPanel = document.getElementById('overlayPanel');
+  var frame = document.getElementById('frame');
+
+  var prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  var cell = 20;
+  var snake, dir, nextDir, food, score, length, tickMs, acc, lastTime, particles;
+  var running = false, paused = false;
+
+  var best = 0;
+  try {
+    best = parseInt(localStorage.getItem('precision-snake-best') || '0', 10) || 0;
+  } catch (e) {}
+  bestEl.textContent = pad3(best);
+
+  function pad3(n) { return String(n).padStart(3, '0'); }
+  function pad2(n) { return String(n).padStart(2, '0'); }
+
+  function getVar(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  function hexToRgb(hex) {
+    hex = hex.replace('#', '');
+    if (hex.length === 3) hex = hex.split('').map(function (c) { return c + c; }).join('');
+    var num = parseInt(hex, 16);
+    return { r: (num >> 16) & 255, g: (num >> 8) & 255, b: num & 255 };
+  }
+
+  function shade(hex, t) {
+    var c = hexToRgb(hex);
+    var target = hexToRgb(getVar('--bg'));
+    var r = Math.round(c.r * t + target.r * (1 - t));
+    var g = Math.round(c.g * t + target.g * (1 - t));
+    var b = Math.round(c.b * t + target.b * (1 - t));
+    return 'rgb(' + r + ',' + g + ',' + b + ')';
+  }
+
+  function initState() {
+    var start = Math.floor(GRID / 2);
+    snake = [
+      { x: start - 1, y: start },
+      { x: start - 2, y: start },
+      { x: start - 3, y: start }
+    ];
+    dir = { x: 1, y: 0 };
+    nextDir = { x: 1, y: 0 };
+    score = 0;
+    length = snake.length;
+    tickMs = 140;
+    acc = 0;
+    particles = [];
+    placeFood();
+    updateHud();
+  }
+
+  function placeFood() {
+    var pos;
+    do {
+      pos = { x: Math.floor(Math.random() * GRID), y: Math.floor(Math.random() * GRID) };
+    } while (snake.some(function (s) { return s.x === pos.x && s.y === pos.y; }));
+    food = pos;
+  }
+
+  function updateHud() {
+    scoreEl.textContent = pad3(score);
+    lengthEl.textContent = pad2(length);
+  }
+
+  function setDirection(x, y) {
+    if (dir.x === -x && dir.y === -y) return;
+    if (dir.x === x && dir.y === y) return;
+    nextDir = { x: x, y: y };
+  }
+
+  window.addEventListener('keydown', function (e) {
+    var k = e.key.toLowerCase();
+    if (k === 'arrowup' || k === 'w') { setDirection(0, -1); e.preventDefault(); }
+    else if (k === 'arrowdown' || k === 's') { setDirection(0, 1); e.preventDefault(); }
+    else if (k === 'arrowleft' || k === 'a') { setDirection(-1, 0); e.preventDefault(); }
+    else if (k === 'arrowright' || k === 'd') { setDirection(1, 0); e.preventDefault(); }
+    else if (k === ' ') { togglePause(); e.preventDefault(); }
+    else if (k === 'enter' && overlay.classList.contains('visible')) { startGame(); }
+  }, { passive: false });
+
+  var touchStart = null;
+  canvas.addEventListener('touchstart', function (e) {
+    var t = e.changedTouches[0];
+    touchStart = { x: t.clientX, y: t.clientY };
+  }, { passive: true });
+  canvas.addEventListener('touchend', function (e) {
+    if (!touchStart) return;
+    var t = e.changedTouches[0];
+    var dx = t.clientX - touchStart.x;
+    var dy = t.clientY - touchStart.y;
+    if (Math.max(Math.abs(dx), Math.abs(dy)) > 20) {
+      if (Math.abs(dx) > Math.abs(dy)) setDirection(dx > 0 ? 1 : -1, 0);
+      else setDirection(0, dy > 0 ? 1 : -1);
+    }
+    touchStart = null;
+  }, { passive: true });
+
+  function togglePause() {
+    if (!running) return;
+    paused = !paused;
+    if (paused) showOverlay('paused'); else hideOverlay();
+  }
+
+  function showOverlay(kind) {
+    overlay.classList.add('visible');
+    if (kind === 'start') {
+      overlayPanel.innerHTML =
+        '<p class="overlay-eyebrow">Ready</p>' +
+        '<h1 class="overlay-title">Precision Snake</h1>' +
+        '<p class="overlay-copy">Arrow keys or WASD to steer, swipe on touch. Collect the nodes without crossing your own path.</p>' +
+        '<button class="btn" id="startBtn" type="button">Start run</button>';
+    } else if (kind === 'paused') {
+      overlayPanel.innerHTML =
+        '<p class="overlay-eyebrow">Paused</p>' +
+        '<h1 class="overlay-title">Hold position</h1>' +
+        '<p class="overlay-copy">Score ' + pad3(score) + ' &middot; Length ' + length + '</p>' +
+        '<button class="btn" id="startBtn" type="button">Resume</button>';
+    } else if (kind === 'over') {
+      var isBest = score > best;
+      if (isBest) {
+        best = score;
+        try { localStorage.setItem('precision-snake-best', String(best)); } catch (e) {}
+      }
+      bestEl.textContent = pad3(best);
+      overlayPanel.innerHTML =
+        '<p class="overlay-eyebrow" style="color:var(--danger)">Run ended</p>' +
+        '<h1 class="overlay-title">' + (isBest ? 'New best' : 'Final score') + '</h1>' +
+        '<p class="overlay-copy">Score ' + pad3(score) + ' &middot; Length ' + length + (isBest ? ' &middot; Personal best' : '') + '</p>' +
+        '<button class="btn" id="startBtn" type="button">Run again</button>';
+    }
+    document.getElementById('startBtn').addEventListener('click', function () {
+      if (kind === 'paused') { paused = false; hideOverlay(); }
+      else { startGame(); }
+    });
+  }
+
+  function hideOverlay() {
+    overlay.classList.remove('visible');
+  }
+
+  function startGame() {
+    initState();
+    running = true;
+    paused = false;
+    hideOverlay();
+    lastTime = performance.now();
+    requestAnimationFrame(loop);
+  }
+
+  function loop(t) {
+    if (!running) return;
+    if (!paused) {
+      var dt = t - lastTime;
+      lastTime = t;
+      acc += dt;
+      while (acc >= tickMs) {
+        step();
+        acc -= tickMs;
+        if (!running) break;
+      }
+    } else {
+      lastTime = t;
+    }
+    draw(t);
+    requestAnimationFrame(loop);
+  }
+
+  function step() {
+    dir = nextDir;
+    var head = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
+    var hitWall = head.x < 0 || head.x >= GRID || head.y < 0 || head.y >= GRID;
+    var hitSelf = !hitWall && snake.some(function (s) { return s.x === head.x && s.y === head.y; });
+    if (hitWall || hitSelf) {
+      endGame();
+      return;
+    }
+    snake.unshift(head);
+    if (head.x === food.x && head.y === food.y) {
+      score += 10;
+      length = snake.length;
+      spawnParticles(food.x, food.y);
+      placeFood();
+      if (length % 5 === 0) tickMs = Math.max(70, tickMs - 8);
+      updateHud();
+      pulseFrame();
+    } else {
+      snake.pop();
+    }
+  }
+
+  function endGame() {
+    running = false;
+    if (!prefersReducedMotion) flashDanger();
+    showOverlay('over');
+  }
+
+  function pulseFrame() {
+    frame.classList.remove('pulse');
+    void frame.offsetWidth;
+    frame.classList.add('pulse');
+  }
+  function flashDanger() {
+    frame.classList.remove('flash');
+    void frame.offsetWidth;
+    frame.classList.add('flash');
+  }
+
+  function spawnParticles(gx, gy) {
+    if (prefersReducedMotion) return;
+    for (var i = 0; i < 10; i++) {
+      var angle = (Math.PI * 2 / 10) * i;
+      particles.push({
+        x: (gx + 0.5) * cell,
+        y: (gy + 0.5) * cell,
+        vx: Math.cos(angle) * 1.6,
+        vy: Math.sin(angle) * 1.6,
+        life: 1
+      });
+    }
+  }
+
+  function resizeCanvas() {
+    var rect = canvas.getBoundingClientRect();
+    var dpr = window.devicePixelRatio || 1;
+    var size = rect.width || 480;
+    cell = size / GRID;
+    canvas.width = Math.round(size * dpr);
+    canvas.height = Math.round(size * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    draw(performance.now());
+  }
+  window.addEventListener('resize', resizeCanvas);
+
+  function draw(t) {
+    var w = canvas.getBoundingClientRect().width || 480;
+    ctx.clearRect(0, 0, w, w);
+    ctx.fillStyle = getVar('--surface');
+    ctx.fillRect(0, 0, w, w);
+
+    ctx.strokeStyle = getVar('--grid-line');
+    ctx.lineWidth = 1;
+    for (var i = 1; i < GRID; i++) {
+      var p = Math.round(i * cell) + 0.5;
+      ctx.beginPath(); ctx.moveTo(p, 0); ctx.lineTo(p, w); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, p); ctx.lineTo(w, p); ctx.stroke();
+    }
+
+    var pulse = 0.5 + 0.5 * Math.sin(t / 220);
+    drawFood(food.x, food.y, pulse);
+
+    for (var s = snake.length - 1; s >= 0; s--) drawSegment(snake[s], s);
+
+    if (particles && particles.length) {
+      particles.forEach(function (pt) {
+        pt.x += pt.vx; pt.y += pt.vy; pt.life -= 0.04;
+      });
+      particles = particles.filter(function (pt) { return pt.life > 0; });
+      particles.forEach(function (pt) {
+        ctx.globalAlpha = Math.max(pt.life, 0);
+        ctx.fillStyle = getVar('--accent-2');
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, 2.2, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  function drawFood(gx, gy, pulse) {
+    var cx = (gx + 0.5) * cell, cy = (gy + 0.5) * cell;
+    var r = cell * 0.26 + pulse * 1.4;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(Math.PI / 4);
+    ctx.fillStyle = getVar('--accent-2');
+    ctx.shadowColor = getVar('--accent-2');
+    ctx.shadowBlur = 8 + pulse * 6;
+    ctx.fillRect(-r, -r, r * 2, r * 2);
+    ctx.restore();
+  }
+
+  function drawSegment(seg, i) {
+    var x = seg.x * cell, y = seg.y * cell;
+    var padAmt = cell * 0.08;
+    var isHead = i === 0;
+    var t = 1 - Math.min(i / Math.max(snake.length - 1, 1), 1) * 0.55;
+    ctx.fillStyle = shade(getVar('--accent'), t);
+    roundRect(ctx, x + padAmt, y + padAmt, cell - padAmt * 2, cell - padAmt * 2, cell * 0.28);
+    ctx.fill();
+    if (isHead) {
+      ctx.fillStyle = getVar('--surface');
+      var ex = x + cell * 0.5 + dir.x * cell * 0.15;
+      var ey = y + cell * 0.5 + dir.y * cell * 0.15;
+      var perp = { x: -dir.y, y: dir.x };
+      [-1, 1].forEach(function (sgn) {
+        ctx.beginPath();
+        ctx.arc(ex + perp.x * cell * 0.18 * sgn, ey + perp.y * cell * 0.18 * sgn, cell * 0.07, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
+  }
+
+  function roundRect(c, x, y, w, h, r) {
+    c.beginPath();
+    c.moveTo(x + r, y);
+    c.arcTo(x + w, y, x + w, y + h, r);
+    c.arcTo(x + w, y + h, x, y + h, r);
+    c.arcTo(x, y + h, x, y, r);
+    c.arcTo(x, y, x + w, y, r);
+    c.closePath();
+  }
+
+  initState();
+  resizeCanvas();
+  document.getElementById('startBtn').addEventListener('click', startGame);
+})();
+</script>

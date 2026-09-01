@@ -410,7 +410,8 @@
         '<p class="overlay-copy">Score ' + pad3(score) + ' &middot; Length ' + length + (isBest ? ' &middot; Personal best' : '') + '</p>' +
         '<button class="btn" id="startBtn" type="button">Run again</button>';
     }
-    document.getElementById('startBtn').addEventListener('click', function () {
+    document.getElementById('startBtn').addEventListener('click', function (e) {
+      e.currentTarget.blur();
       if (kind === 'paused') { paused = false; hideOverlay(); }
       else { startGame(); }
     });
@@ -594,6 +595,6 @@
 
   initState();
   resizeCanvas();
-  document.getElementById('startBtn').addEventListener('click', startGame);
+  document.getElementById('startBtn').addEventListener('click', (e) => { e.currentTarget.blur(); startGame(); });
 })();
 </script>
